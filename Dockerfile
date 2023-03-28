@@ -6,6 +6,6 @@ MAINTAINER "Neo Peng <pengzhile@gmail.com>"
 WORKDIR /opt/app
 ADD . .
 RUN pip install --upgrade pip && pip install .[api,cloud]
-ENV PANDORA_CLOUD=127.0.0.1:80
+ENV PANDORA_CLOUD=0.0.0.0:8018
 
 ENTRYPOINT ["bin/startup.sh"]
