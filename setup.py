@@ -30,7 +30,7 @@ setup(
     install_requires=requirements,
     extras_require={
         'api': requirements_api,
-        'cloud': ['pandora-cloud~=0.0.1'],
+        'cloud': ['pandora-cloud~=0.0.7'],
     },
     entry_points={
         'console_scripts': [
@@ -43,7 +43,7 @@ setup(
         'Tracker': 'https://github.com/pengzhile/pandora/issues',
     },
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
 
         'Environment :: Console',
         'Environment :: Web Environment',

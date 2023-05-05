@@ -49,7 +49,7 @@ def save_access_token(access_token):
         print()
 
 
-def confirm_access_token(token_file=None, silence=False):
+def confirm_access_token(token_file=None, silence=False, api=False):
     app_token_file = os.path.join(USER_CONFIG_DIR, 'access_token.dat')
 
     app_token_file_exists = os.path.isfile(app_token_file)
@@ -72,7 +72,7 @@ def confirm_access_token(token_file=None, silence=False):
                                                  choices=['y', 'n', 'del'], default='y')
         if 'y' == confirm:
             access_token = read_access_token(app_token_file)
-            if not check_access_token_out(access_token):
+            if not check_access_token_out(access_token, api):
                 os.remove(app_token_file)
                 return None, True
 
@@ -83,14 +83,39 @@ def confirm_access_token(token_file=None, silence=False):
     return None, True
 
 
+def parse_access_tokens(tokens_file, api=False):
+    if not os.path.isfile(tokens_file):
+        raise Exception('Error: {} is not a file.'.format(tokens_file))
+
+    import json
+    with open(tokens_file, 'r') as f:
+        tokens = json.load(f)
+
+    valid_tokens = {}
+    for key, value in tokens.items():
+        if not check_access_token_out(value, api=api):
+            Console.error('### Access token id: {}'.format(key))
+            continue
+        valid_tokens[key] = value
+
+    if not valid_tokens:
+        Console.error('### No valid access tokens.')
+        return None
+
+    return valid_tokens
+
+
 def main():
     global __show_verbose
 
+    api_prefix = getenv('CHATGPT_API_PREFIX', 'https://ai.fakeopen.com')
+
     Console.debug_b(
         '''
-          Pandora - A command-line interface to ChatGPT
-          Github: https://github.com/pengzhile/pandora
-          Version: {}'''.format(__version__), end=''
+            Pandora - A command-line interface to ChatGPT
+            Github: https://github.com/pengzhile/pandora
+            Get access token: {}/auth
+            Version: {}'''.format(api_prefix, __version__), end=''
     )
 
     parser = argparse.ArgumentParser()
@@ -111,6 +136,13 @@ def main():
         default=None,
     )
     parser.add_argument(
+        '--tokens_file',
+        help='Specify an access tokens json file.',
+        required=False,
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         '-s',
         '--server',
         help='Start as a proxy server. Format: ip:port, default: 127.0.0.1:8008',
@@ -120,6 +152,13 @@ def main():
         action='store',
         nargs='?',
         const='127.0.0.1:8008',
+    )
+    parser.add_argument(
+        '--threads',
+        help='Define the number of server workers, default: 8',
+        required=False,
+        type=int,
+        default=8,
     )
     parser.add_argument(
         '-a',
@@ -157,30 +196,35 @@ def main():
             Console.error_bh('### You need `pip install Pandora-ChatGPT[api]` to support API mode.')
             return
 
-    access_token, need_save = confirm_access_token(args.token_file, args.server)
-    if not access_token:
-        Console.info_b('Please enter your email and password to log in ChatGPT!')
-        email = getenv('OPENAI_EMAIL') or Prompt.ask('  Email')
-        password = getenv('OPENAI_PASSWORD') or Prompt.ask('  Password', password=True)
-        Console.warn('### Do login, please wait...')
-        access_token = Auth0(email, password, args.proxy).auth()
+    access_tokens = parse_access_tokens(args.tokens_file, args.api) if args.tokens_file else None
 
-    if not check_access_token_out(access_token):
-        return
+    if not access_tokens:
+        access_token, need_save = confirm_access_token(args.token_file, args.server, args.api)
+        if not access_token:
+            Console.info_b('Please enter your email and password to log in ChatGPT!')
+            email = getenv('OPENAI_EMAIL') or Prompt.ask('  Email')
+            password = getenv('OPENAI_PASSWORD') or Prompt.ask('  Password', password=True)
+            Console.warn('### Do login, please wait...')
+            access_token = Auth0(email, password, args.proxy).auth(True)
 
-    if need_save:
-        if args.server or Confirm.ask('Do you want to save your access token for the next login?', default=True):
-            save_access_token(access_token)
+        if not check_access_token_out(access_token, args.api):
+            return
+
+        if need_save:
+            if args.server or Confirm.ask('Do you want to save your access token for the next login?', default=True):
+                save_access_token(access_token)
+
+        access_tokens = {'default': access_token}
 
     if args.api:
         from .turbo.chat import TurboGPT
 
-        chatgpt = TurboGPT(access_token, args.proxy)
+        chatgpt = TurboGPT(access_tokens, args.proxy)
     else:
-        chatgpt = ChatGPT(access_token, args.proxy)
+        chatgpt = ChatGPT(access_tokens, args.proxy)
 
     if args.server:
-        return ChatBotServer(chatgpt, args.verbose, args.sentry).run(args.server)
+        return ChatBotServer(chatgpt, args.verbose, args.sentry).run(args.server, args.threads)
 
     ChatBotLegacy(chatgpt).run()
 
